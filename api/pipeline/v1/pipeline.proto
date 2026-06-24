@@ -47,6 +47,18 @@ message Pipeline {
 
   // The type of config.
   ConfigType config_type = 10;
+
+  // Optional signing chain. All three fields together form a verifiable
+  // signature; verifiers reject pipelines where any field is missing.
+
+  // Ed25519 signature over `contents` (64 bytes).
+  optional bytes signature = 11;
+
+  // Ed25519 public key of the signing subkey (32 bytes).
+  optional bytes subkey_pub = 12;
+
+  // Ed25519 signature from the master key over `subkey_pub` (64 bytes).
+  optional bytes binding_sig = 13;
 }
 
 // Pipelines represents a list of pipelines.

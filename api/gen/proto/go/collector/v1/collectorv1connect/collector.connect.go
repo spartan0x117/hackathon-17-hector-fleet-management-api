@@ -9,6 +9,7 @@ import (
 	context "context"
 	errors "errors"
 	v1 "github.com/grafana/fleet-management-api/api/gen/proto/go/collector/v1"
+	v11 "github.com/grafana/fleet-management-api/api/gen/proto/go/pipeline/v1"
 	http "net/http"
 	strings "strings"
 )
@@ -33,6 +34,18 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// CollectorServiceGetConfigProcedure is the fully-qualified name of the CollectorService's
+	// GetConfig RPC.
+	CollectorServiceGetConfigProcedure = "/collector.v1.CollectorService/GetConfig"
+	// CollectorServiceRegisterCollectorProcedure is the fully-qualified name of the CollectorService's
+	// RegisterCollector RPC.
+	CollectorServiceRegisterCollectorProcedure = "/collector.v1.CollectorService/RegisterCollector"
+	// CollectorServiceUnregisterCollectorProcedure is the fully-qualified name of the
+	// CollectorService's UnregisterCollector RPC.
+	CollectorServiceUnregisterCollectorProcedure = "/collector.v1.CollectorService/UnregisterCollector"
+	// CollectorServiceGetPipelinesProcedure is the fully-qualified name of the CollectorService's
+	// GetPipelines RPC.
+	CollectorServiceGetPipelinesProcedure = "/collector.v1.CollectorService/GetPipelines"
 	// CollectorServiceGetCollectorProcedure is the fully-qualified name of the CollectorService's
 	// GetCollector RPC.
 	CollectorServiceGetCollectorProcedure = "/collector.v1.CollectorService/GetCollector"
@@ -62,6 +75,10 @@ const (
 // These variables are the protoreflect.Descriptor objects for the RPCs defined in this package.
 var (
 	collectorServiceServiceDescriptor                       = v1.File_collector_v1_collector_proto.Services().ByName("CollectorService")
+	collectorServiceGetConfigMethodDescriptor               = collectorServiceServiceDescriptor.Methods().ByName("GetConfig")
+	collectorServiceRegisterCollectorMethodDescriptor       = collectorServiceServiceDescriptor.Methods().ByName("RegisterCollector")
+	collectorServiceUnregisterCollectorMethodDescriptor     = collectorServiceServiceDescriptor.Methods().ByName("UnregisterCollector")
+	collectorServiceGetPipelinesMethodDescriptor            = collectorServiceServiceDescriptor.Methods().ByName("GetPipelines")
 	collectorServiceGetCollectorMethodDescriptor            = collectorServiceServiceDescriptor.Methods().ByName("GetCollector")
 	collectorServiceListCollectorsMethodDescriptor          = collectorServiceServiceDescriptor.Methods().ByName("ListCollectors")
 	collectorServiceCreateCollectorMethodDescriptor         = collectorServiceServiceDescriptor.Methods().ByName("CreateCollector")
@@ -74,6 +91,16 @@ var (
 
 // CollectorServiceClient is a client for the collector.v1.CollectorService service.
 type CollectorServiceClient interface {
+	// GetConfig returns the collector's merged configuration.
+	GetConfig(context.Context, *connect.Request[v1.GetConfigRequest]) (*connect.Response[v1.GetConfigResponse], error)
+	// RegisterCollector registers the collector with the given ID and local attributes. It will
+	// update the collector's attributes if the collector is already registered and the
+	// attributes are different.
+	RegisterCollector(context.Context, *connect.Request[v1.RegisterCollectorRequest]) (*connect.Response[v1.RegisterCollectorResponse], error)
+	// UnregisterCollector unregisters the collector with the given ID.
+	UnregisterCollector(context.Context, *connect.Request[v1.UnregisterCollectorRequest]) (*connect.Response[v1.UnregisterCollectorResponse], error)
+	// GetPipelines returns the collector's matching pipelines without merging them into a configuration.
+	GetPipelines(context.Context, *connect.Request[v1.GetPipelinesRequest]) (*connect.Response[v11.Pipelines], error)
 	// GetCollector returns information about the collector.
 	GetCollector(context.Context, *connect.Request[v1.GetCollectorRequest]) (*connect.Response[v1.Collector], error)
 	// ListCollectors returns information about all collectors.
@@ -102,6 +129,33 @@ type CollectorServiceClient interface {
 func NewCollectorServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) CollectorServiceClient {
 	baseURL = strings.TrimRight(baseURL, "/")
 	return &collectorServiceClient{
+		getConfig: connect.NewClient[v1.GetConfigRequest, v1.GetConfigResponse](
+			httpClient,
+			baseURL+CollectorServiceGetConfigProcedure,
+			connect.WithSchema(collectorServiceGetConfigMethodDescriptor),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
+		registerCollector: connect.NewClient[v1.RegisterCollectorRequest, v1.RegisterCollectorResponse](
+			httpClient,
+			baseURL+CollectorServiceRegisterCollectorProcedure,
+			connect.WithSchema(collectorServiceRegisterCollectorMethodDescriptor),
+			connect.WithIdempotency(connect.IdempotencyIdempotent),
+			connect.WithClientOptions(opts...),
+		),
+		unregisterCollector: connect.NewClient[v1.UnregisterCollectorRequest, v1.UnregisterCollectorResponse](
+			httpClient,
+			baseURL+CollectorServiceUnregisterCollectorProcedure,
+			connect.WithSchema(collectorServiceUnregisterCollectorMethodDescriptor),
+			connect.WithClientOptions(opts...),
+		),
+		getPipelines: connect.NewClient[v1.GetPipelinesRequest, v11.Pipelines](
+			httpClient,
+			baseURL+CollectorServiceGetPipelinesProcedure,
+			connect.WithSchema(collectorServiceGetPipelinesMethodDescriptor),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
 		getCollector: connect.NewClient[v1.GetCollectorRequest, v1.Collector](
 			httpClient,
 			baseURL+CollectorServiceGetCollectorProcedure,
@@ -155,6 +209,10 @@ func NewCollectorServiceClient(httpClient connect.HTTPClient, baseURL string, op
 
 // collectorServiceClient implements CollectorServiceClient.
 type collectorServiceClient struct {
+	getConfig               *connect.Client[v1.GetConfigRequest, v1.GetConfigResponse]
+	registerCollector       *connect.Client[v1.RegisterCollectorRequest, v1.RegisterCollectorResponse]
+	unregisterCollector     *connect.Client[v1.UnregisterCollectorRequest, v1.UnregisterCollectorResponse]
+	getPipelines            *connect.Client[v1.GetPipelinesRequest, v11.Pipelines]
 	getCollector            *connect.Client[v1.GetCollectorRequest, v1.Collector]
 	listCollectors          *connect.Client[v1.ListCollectorsRequest, v1.Collectors]
 	createCollector         *connect.Client[v1.CreateCollectorRequest, v1.Collector]
@@ -163,6 +221,26 @@ type collectorServiceClient struct {
 	bulkDeleteCollectors    *connect.Client[v1.BulkDeleteCollectorsRequest, v1.BulkDeleteCollectorsResponse]
 	deleteCollector         *connect.Client[v1.DeleteCollectorRequest, v1.DeleteCollectorResponse]
 	listCollectorAttributes *connect.Client[v1.ListCollectorAttributesRequest, v1.ListCollectorAttributesResponse]
+}
+
+// GetConfig calls collector.v1.CollectorService.GetConfig.
+func (c *collectorServiceClient) GetConfig(ctx context.Context, req *connect.Request[v1.GetConfigRequest]) (*connect.Response[v1.GetConfigResponse], error) {
+	return c.getConfig.CallUnary(ctx, req)
+}
+
+// RegisterCollector calls collector.v1.CollectorService.RegisterCollector.
+func (c *collectorServiceClient) RegisterCollector(ctx context.Context, req *connect.Request[v1.RegisterCollectorRequest]) (*connect.Response[v1.RegisterCollectorResponse], error) {
+	return c.registerCollector.CallUnary(ctx, req)
+}
+
+// UnregisterCollector calls collector.v1.CollectorService.UnregisterCollector.
+func (c *collectorServiceClient) UnregisterCollector(ctx context.Context, req *connect.Request[v1.UnregisterCollectorRequest]) (*connect.Response[v1.UnregisterCollectorResponse], error) {
+	return c.unregisterCollector.CallUnary(ctx, req)
+}
+
+// GetPipelines calls collector.v1.CollectorService.GetPipelines.
+func (c *collectorServiceClient) GetPipelines(ctx context.Context, req *connect.Request[v1.GetPipelinesRequest]) (*connect.Response[v11.Pipelines], error) {
+	return c.getPipelines.CallUnary(ctx, req)
 }
 
 // GetCollector calls collector.v1.CollectorService.GetCollector.
@@ -207,6 +285,16 @@ func (c *collectorServiceClient) ListCollectorAttributes(ctx context.Context, re
 
 // CollectorServiceHandler is an implementation of the collector.v1.CollectorService service.
 type CollectorServiceHandler interface {
+	// GetConfig returns the collector's merged configuration.
+	GetConfig(context.Context, *connect.Request[v1.GetConfigRequest]) (*connect.Response[v1.GetConfigResponse], error)
+	// RegisterCollector registers the collector with the given ID and local attributes. It will
+	// update the collector's attributes if the collector is already registered and the
+	// attributes are different.
+	RegisterCollector(context.Context, *connect.Request[v1.RegisterCollectorRequest]) (*connect.Response[v1.RegisterCollectorResponse], error)
+	// UnregisterCollector unregisters the collector with the given ID.
+	UnregisterCollector(context.Context, *connect.Request[v1.UnregisterCollectorRequest]) (*connect.Response[v1.UnregisterCollectorResponse], error)
+	// GetPipelines returns the collector's matching pipelines without merging them into a configuration.
+	GetPipelines(context.Context, *connect.Request[v1.GetPipelinesRequest]) (*connect.Response[v11.Pipelines], error)
 	// GetCollector returns information about the collector.
 	GetCollector(context.Context, *connect.Request[v1.GetCollectorRequest]) (*connect.Response[v1.Collector], error)
 	// ListCollectors returns information about all collectors.
@@ -231,6 +319,33 @@ type CollectorServiceHandler interface {
 // By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
 // and JSON codecs. They also support gzip compression.
 func NewCollectorServiceHandler(svc CollectorServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	collectorServiceGetConfigHandler := connect.NewUnaryHandler(
+		CollectorServiceGetConfigProcedure,
+		svc.GetConfig,
+		connect.WithSchema(collectorServiceGetConfigMethodDescriptor),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	collectorServiceRegisterCollectorHandler := connect.NewUnaryHandler(
+		CollectorServiceRegisterCollectorProcedure,
+		svc.RegisterCollector,
+		connect.WithSchema(collectorServiceRegisterCollectorMethodDescriptor),
+		connect.WithIdempotency(connect.IdempotencyIdempotent),
+		connect.WithHandlerOptions(opts...),
+	)
+	collectorServiceUnregisterCollectorHandler := connect.NewUnaryHandler(
+		CollectorServiceUnregisterCollectorProcedure,
+		svc.UnregisterCollector,
+		connect.WithSchema(collectorServiceUnregisterCollectorMethodDescriptor),
+		connect.WithHandlerOptions(opts...),
+	)
+	collectorServiceGetPipelinesHandler := connect.NewUnaryHandler(
+		CollectorServiceGetPipelinesProcedure,
+		svc.GetPipelines,
+		connect.WithSchema(collectorServiceGetPipelinesMethodDescriptor),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
 	collectorServiceGetCollectorHandler := connect.NewUnaryHandler(
 		CollectorServiceGetCollectorProcedure,
 		svc.GetCollector,
@@ -281,6 +396,14 @@ func NewCollectorServiceHandler(svc CollectorServiceHandler, opts ...connect.Han
 	)
 	return "/collector.v1.CollectorService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case CollectorServiceGetConfigProcedure:
+			collectorServiceGetConfigHandler.ServeHTTP(w, r)
+		case CollectorServiceRegisterCollectorProcedure:
+			collectorServiceRegisterCollectorHandler.ServeHTTP(w, r)
+		case CollectorServiceUnregisterCollectorProcedure:
+			collectorServiceUnregisterCollectorHandler.ServeHTTP(w, r)
+		case CollectorServiceGetPipelinesProcedure:
+			collectorServiceGetPipelinesHandler.ServeHTTP(w, r)
 		case CollectorServiceGetCollectorProcedure:
 			collectorServiceGetCollectorHandler.ServeHTTP(w, r)
 		case CollectorServiceListCollectorsProcedure:
@@ -305,6 +428,22 @@ func NewCollectorServiceHandler(svc CollectorServiceHandler, opts ...connect.Han
 
 // UnimplementedCollectorServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedCollectorServiceHandler struct{}
+
+func (UnimplementedCollectorServiceHandler) GetConfig(context.Context, *connect.Request[v1.GetConfigRequest]) (*connect.Response[v1.GetConfigResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("collector.v1.CollectorService.GetConfig is not implemented"))
+}
+
+func (UnimplementedCollectorServiceHandler) RegisterCollector(context.Context, *connect.Request[v1.RegisterCollectorRequest]) (*connect.Response[v1.RegisterCollectorResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("collector.v1.CollectorService.RegisterCollector is not implemented"))
+}
+
+func (UnimplementedCollectorServiceHandler) UnregisterCollector(context.Context, *connect.Request[v1.UnregisterCollectorRequest]) (*connect.Response[v1.UnregisterCollectorResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("collector.v1.CollectorService.UnregisterCollector is not implemented"))
+}
+
+func (UnimplementedCollectorServiceHandler) GetPipelines(context.Context, *connect.Request[v1.GetPipelinesRequest]) (*connect.Response[v11.Pipelines], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("collector.v1.CollectorService.GetPipelines is not implemented"))
+}
 
 func (UnimplementedCollectorServiceHandler) GetCollector(context.Context, *connect.Request[v1.GetCollectorRequest]) (*connect.Response[v1.Collector], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("collector.v1.CollectorService.GetCollector is not implemented"))
