@@ -1,0 +1,202 @@
+syntax = "proto3";
+
+package keymanagement.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/spartan0x117/hackathon-17-hector-fleet-management-api/api/gen/proto/go/keymanagement/v1;keymanagementv1";
+
+// ArgonParams describes the Argon2id parameters used to derive the
+// password-based key-encryption-key (KEK) on the client.
+//
+// These are stored alongside the salt so the browser can deterministically
+// re-derive the same KEK every time the user enters their password.
+message ArgonParams {
+  // ops_limit is the Argon2id operations limit (sometimes called "iterations"
+  // or "time cost"). Higher means slower per-guess.
+  uint32 ops_limit = 1;
+  // mem_limit is the Argon2id memory limit, in bytes.
+  uint64 mem_limit = 2;
+  // algorithm is the Argon2id algorithm variant identifier. Reserved for
+  // future use; currently always Argon2id (libsodium's default).
+  uint32 algorithm = 3;
+}
+
+// MasterKeyMaterial is the per-tenant key envelope. Everything the server
+// stores for one tenant's master-level key custody.
+//
+// All private material is encrypted client-side before being uploaded.
+// The server never sees plaintext key material.
+message MasterKeyMaterial {
+  // master_signing_pub is the Ed25519 master signing public key (32 bytes).
+  // Customers paste this into Alloy's trust configuration.
+  bytes master_signing_pub = 1;
+
+  // salt is the random per-tenant salt used by Argon2id (16 bytes). Not
+  // secret; stored as plaintext alongside the encrypted material.
+  bytes salt = 2;
+
+  // argon_params records the Argon2id parameters used to derive the KEK.
+  ArgonParams argon_params = 3;
+
+  // wrapped_master_key_by_kek is the MasterKey symmetrically encrypted
+  // with the password-derived KEK. Decrypting this with the correct
+  // password-derived KEK yields the MasterKey.
+  bytes wrapped_master_key_by_kek = 4;
+
+  // wrapped_master_key_by_recovery_key is the MasterKey symmetrically
+  // encrypted with the user's RecoveryKey. Used during the recovery flow.
+  bytes wrapped_master_key_by_recovery_key = 5;
+
+  // wrapped_master_signing_priv is the Ed25519 master signing private key,
+  // symmetrically encrypted with the MasterKey. Unlocked by the browser
+  // when minting a new subkey.
+  bytes wrapped_master_signing_priv = 6;
+
+  // created_at is when this material was first stored.
+  optional google.protobuf.Timestamp created_at = 7;
+  // updated_at is when this material was last modified (e.g. on password change).
+  optional google.protobuf.Timestamp updated_at = 8;
+}
+
+// Subkey is a per-tenant signing subkey, including the binding signature
+// that endorses it under the tenant's master signing key.
+message Subkey {
+  // id is the server-assigned row identifier.
+  string id = 1;
+
+  // subkey_id is the stable, user-visible identifier for this subkey,
+  // generated client-side at mint time (16 random bytes, treated as opaque).
+  bytes subkey_id = 2;
+
+  // subkey_pub is the Ed25519 subkey public key (32 bytes).
+  bytes subkey_pub = 3;
+
+  // binding_sig is the Ed25519 signature by the master signing private key
+  // over the canonical concatenation (subkey_pub || subkey_id || expiry).
+  // Alloy will verify this against master_signing_pub before trusting any
+  // pipeline signature made by subkey_pub. 64 bytes.
+  bytes binding_sig = 4;
+
+  // expiry is the binding's expiration time. Embedded in the bound payload
+  // so Alloy enforces the same expiry the master endorsed.
+  google.protobuf.Timestamp expiry = 5;
+
+  // wrapped_subkey_priv is the subkey private key encrypted with the
+  // tenant's MasterKey. Stored so the browser can unlock it and sign
+  // pipelines.
+  bytes wrapped_subkey_priv = 6;
+
+  // revoked indicates the subkey has been explicitly revoked.
+  bool revoked = 7;
+
+  // label is an optional human-readable label (e.g. "interactive",
+  // "automation").
+  string label = 8;
+
+  // created_at is when the subkey was minted.
+  optional google.protobuf.Timestamp created_at = 9;
+}
+
+// SetupKeysRequest initializes all key material for the calling tenant.
+// Called once, the first time a tenant enables signing.
+message SetupKeysRequest {
+  // (required) The master key material to store.
+  MasterKeyMaterial master_key_material = 1;
+}
+
+message SetupKeysResponse {}
+
+// GetKeysRequest returns the master key material for the calling tenant.
+message GetKeysRequest {}
+
+message GetKeysResponse {
+  // initialized is true iff the tenant has previously called SetupKeys.
+  bool initialized = 1;
+  // master_key_material is the stored material (only populated when
+  // initialized is true).
+  MasterKeyMaterial master_key_material = 2;
+}
+
+// ChangePasswordRequest replaces the password-wrapped MasterKey and its
+// Argon2id parameters. Performed after the client has used the old
+// password to unlock the MasterKey, generated a new salt + KEK from the
+// new password, and re-wrapped the MasterKey.
+message ChangePasswordRequest {
+  bytes salt = 1;
+  ArgonParams argon_params = 2;
+  bytes wrapped_master_key_by_kek = 3;
+}
+
+message ChangePasswordResponse {}
+
+// RecoverPasswordRequest is functionally identical to ChangePasswordRequest
+// but is invoked after the client unlocked the MasterKey via the recovery
+// key path. Kept as a separate RPC for audit clarity and future policy hooks.
+message RecoverPasswordRequest {
+  bytes salt = 1;
+  ArgonParams argon_params = 2;
+  bytes wrapped_master_key_by_kek = 3;
+}
+
+message RecoverPasswordResponse {}
+
+// MintSubkeyRequest stores a freshly-minted subkey.
+message MintSubkeyRequest {
+  // (required) The subkey to store.
+  Subkey subkey = 1;
+}
+
+message MintSubkeyResponse {
+  Subkey subkey = 1;
+}
+
+// ListSubkeysRequest returns the subkeys belonging to the calling tenant.
+message ListSubkeysRequest {
+  // include_revoked, when true, includes revoked subkeys in the response.
+  bool include_revoked = 1;
+}
+
+message ListSubkeysResponse {
+  repeated Subkey subkeys = 1;
+}
+
+// RevokeSubkeyRequest marks an existing subkey revoked.
+message RevokeSubkeyRequest {
+  // (required) The server-assigned ID of the subkey to revoke.
+  string id = 1;
+}
+
+message RevokeSubkeyResponse {}
+
+// KeyManagementService stores per-tenant cryptographic key material for
+// signing fleet management pipelines. All private key material is encrypted
+// client-side before reaching this service; the server stores only
+// ciphertexts and public material.
+service KeyManagementService {
+  // SetupKeys initializes key material for the calling tenant. Fails with
+  // AlreadyExists if the tenant has already been set up.
+  rpc SetupKeys(SetupKeysRequest) returns (SetupKeysResponse);
+
+  // GetKeys returns the master key material for the calling tenant.
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  rpc GetKeys(GetKeysRequest) returns (GetKeysResponse);
+
+  // ChangePassword replaces the password-wrapped MasterKey, leaving all
+  // other key material untouched.
+  rpc ChangePassword(ChangePasswordRequest) returns (ChangePasswordResponse);
+
+  // RecoverPassword replaces the password-wrapped MasterKey via the
+  // recovery-key path.
+  rpc RecoverPassword(RecoverPasswordRequest) returns (RecoverPasswordResponse);
+
+  // MintSubkey stores a new subkey for the calling tenant.
+  rpc MintSubkey(MintSubkeyRequest) returns (MintSubkeyResponse);
+
+  // ListSubkeys returns subkeys for the calling tenant.
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  rpc ListSubkeys(ListSubkeysRequest) returns (ListSubkeysResponse);
+
+  // RevokeSubkey marks a subkey revoked. Idempotent.
+  rpc RevokeSubkey(RevokeSubkeyRequest) returns (RevokeSubkeyResponse);
+}
