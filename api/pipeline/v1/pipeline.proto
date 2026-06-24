@@ -6,7 +6,7 @@ import "google/protobuf/timestamp.proto";
 import "google/protobuf/struct.proto";
 
 
-option go_package = "github.com/grafana/fleet-management-api/api/gen/proto/go/pipeline/v1;pipelinev1";
+option go_package = "github.com/spartan0x117/hackathon-17-hector-fleet-management-api/api/gen/proto/go/pipeline/v1;pipelinev1";
 
 // ConfigType represents the type of config.
 enum ConfigType {

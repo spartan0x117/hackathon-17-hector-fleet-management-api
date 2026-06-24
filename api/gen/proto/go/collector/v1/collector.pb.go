@@ -7,7 +7,7 @@
 package collectorv1
 
 import (
-	v1 "github.com/grafana/fleet-management-api/api/gen/proto/go/pipeline/v1"
+	v1 "github.com/spartan0x117/hackathon-17-hector-fleet-management-api/api/gen/proto/go/pipeline/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"

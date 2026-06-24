@@ -8,7 +8,7 @@ import (
 	connect "connectrpc.com/connect"
 	context "context"
 	errors "errors"
-	v1 "github.com/grafana/fleet-management-api/api/gen/proto/go/pipeline/v1"
+	v1 "github.com/spartan0x117/hackathon-17-hector-fleet-management-api/api/gen/proto/go/pipeline/v1"
 	http "net/http"
 	strings "strings"
 )

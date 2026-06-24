@@ -1,4 +1,4 @@
-module github.com/grafana/fleet-management-api
+module github.com/spartan0x117/hackathon-17-hector-fleet-management-api
 
 go 1.22.11
 

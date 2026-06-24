@@ -5,7 +5,7 @@ package collector.v1;
 import "google/protobuf/timestamp.proto";
 import "pipeline/v1/pipeline.proto";
 
-option go_package = "github.com/grafana/fleet-management-api/api/gen/proto/go/collector/v1;collectorv1";
+option go_package = "github.com/spartan0x117/hackathon-17-hector-fleet-management-api/api/gen/proto/go/collector/v1;collectorv1";
 
 // GetCollectorRequest is the request to retrieve a collector's information. This will
 // return a single collector's information, represented by the Collector message.
