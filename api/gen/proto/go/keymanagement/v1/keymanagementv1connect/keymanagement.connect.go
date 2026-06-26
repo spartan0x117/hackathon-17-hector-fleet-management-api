@@ -45,6 +45,9 @@ const (
 	// KeyManagementServiceRecoverPasswordProcedure is the fully-qualified name of the
 	// KeyManagementService's RecoverPassword RPC.
 	KeyManagementServiceRecoverPasswordProcedure = "/keymanagement.v1.KeyManagementService/RecoverPassword"
+	// KeyManagementServiceReinitializeTenantKeysProcedure is the fully-qualified name of the
+	// KeyManagementService's ReinitializeTenantKeys RPC.
+	KeyManagementServiceReinitializeTenantKeysProcedure = "/keymanagement.v1.KeyManagementService/ReinitializeTenantKeys"
 	// KeyManagementServiceMintSubkeyProcedure is the fully-qualified name of the KeyManagementService's
 	// MintSubkey RPC.
 	KeyManagementServiceMintSubkeyProcedure = "/keymanagement.v1.KeyManagementService/MintSubkey"
@@ -58,14 +61,15 @@ const (
 
 // These variables are the protoreflect.Descriptor objects for the RPCs defined in this package.
 var (
-	keyManagementServiceServiceDescriptor               = v1.File_keymanagement_v1_keymanagement_proto.Services().ByName("KeyManagementService")
-	keyManagementServiceSetupKeysMethodDescriptor       = keyManagementServiceServiceDescriptor.Methods().ByName("SetupKeys")
-	keyManagementServiceGetKeysMethodDescriptor         = keyManagementServiceServiceDescriptor.Methods().ByName("GetKeys")
-	keyManagementServiceChangePasswordMethodDescriptor  = keyManagementServiceServiceDescriptor.Methods().ByName("ChangePassword")
-	keyManagementServiceRecoverPasswordMethodDescriptor = keyManagementServiceServiceDescriptor.Methods().ByName("RecoverPassword")
-	keyManagementServiceMintSubkeyMethodDescriptor      = keyManagementServiceServiceDescriptor.Methods().ByName("MintSubkey")
-	keyManagementServiceListSubkeysMethodDescriptor     = keyManagementServiceServiceDescriptor.Methods().ByName("ListSubkeys")
-	keyManagementServiceRevokeSubkeyMethodDescriptor    = keyManagementServiceServiceDescriptor.Methods().ByName("RevokeSubkey")
+	keyManagementServiceServiceDescriptor                      = v1.File_keymanagement_v1_keymanagement_proto.Services().ByName("KeyManagementService")
+	keyManagementServiceSetupKeysMethodDescriptor              = keyManagementServiceServiceDescriptor.Methods().ByName("SetupKeys")
+	keyManagementServiceGetKeysMethodDescriptor                = keyManagementServiceServiceDescriptor.Methods().ByName("GetKeys")
+	keyManagementServiceChangePasswordMethodDescriptor         = keyManagementServiceServiceDescriptor.Methods().ByName("ChangePassword")
+	keyManagementServiceRecoverPasswordMethodDescriptor        = keyManagementServiceServiceDescriptor.Methods().ByName("RecoverPassword")
+	keyManagementServiceReinitializeTenantKeysMethodDescriptor = keyManagementServiceServiceDescriptor.Methods().ByName("ReinitializeTenantKeys")
+	keyManagementServiceMintSubkeyMethodDescriptor             = keyManagementServiceServiceDescriptor.Methods().ByName("MintSubkey")
+	keyManagementServiceListSubkeysMethodDescriptor            = keyManagementServiceServiceDescriptor.Methods().ByName("ListSubkeys")
+	keyManagementServiceRevokeSubkeyMethodDescriptor           = keyManagementServiceServiceDescriptor.Methods().ByName("RevokeSubkey")
 )
 
 // KeyManagementServiceClient is a client for the keymanagement.v1.KeyManagementService service.
@@ -76,12 +80,16 @@ type KeyManagementServiceClient interface {
 	// GetKeys returns the master key material for the calling tenant.
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	GetKeys(context.Context, *connect.Request[v1.GetKeysRequest]) (*connect.Response[v1.GetKeysResponse], error)
-	// ChangePassword replaces the password-wrapped MasterKey, leaving all
-	// other key material untouched.
+	// ChangePassword replaces the password-wrapped master private key,
+	// leaving all other key material untouched.
 	ChangePassword(context.Context, *connect.Request[v1.ChangePasswordRequest]) (*connect.Response[v1.ChangePasswordResponse], error)
-	// RecoverPassword replaces the password-wrapped MasterKey via the
-	// recovery-key path.
+	// RecoverPassword replaces the password-wrapped master private key via
+	// the recovery-key path.
 	RecoverPassword(context.Context, *connect.Request[v1.RecoverPasswordRequest]) (*connect.Response[v1.RecoverPasswordResponse], error)
+	// ReinitializeTenantKeys replaces the entire stored key envelope. Used by
+	// the panic-button rotation flow after a suspected key compromise; every
+	// credential that produced the previous envelope is assumed burned.
+	ReinitializeTenantKeys(context.Context, *connect.Request[v1.ReinitializeTenantKeysRequest]) (*connect.Response[v1.ReinitializeTenantKeysResponse], error)
 	// MintSubkey stores a new subkey for the calling tenant.
 	MintSubkey(context.Context, *connect.Request[v1.MintSubkeyRequest]) (*connect.Response[v1.MintSubkeyResponse], error)
 	// ListSubkeys returns subkeys for the calling tenant.
@@ -125,6 +133,12 @@ func NewKeyManagementServiceClient(httpClient connect.HTTPClient, baseURL string
 			connect.WithSchema(keyManagementServiceRecoverPasswordMethodDescriptor),
 			connect.WithClientOptions(opts...),
 		),
+		reinitializeTenantKeys: connect.NewClient[v1.ReinitializeTenantKeysRequest, v1.ReinitializeTenantKeysResponse](
+			httpClient,
+			baseURL+KeyManagementServiceReinitializeTenantKeysProcedure,
+			connect.WithSchema(keyManagementServiceReinitializeTenantKeysMethodDescriptor),
+			connect.WithClientOptions(opts...),
+		),
 		mintSubkey: connect.NewClient[v1.MintSubkeyRequest, v1.MintSubkeyResponse](
 			httpClient,
 			baseURL+KeyManagementServiceMintSubkeyProcedure,
@@ -148,13 +162,14 @@ func NewKeyManagementServiceClient(httpClient connect.HTTPClient, baseURL string
 
 // keyManagementServiceClient implements KeyManagementServiceClient.
 type keyManagementServiceClient struct {
-	setupKeys       *connect.Client[v1.SetupKeysRequest, v1.SetupKeysResponse]
-	getKeys         *connect.Client[v1.GetKeysRequest, v1.GetKeysResponse]
-	changePassword  *connect.Client[v1.ChangePasswordRequest, v1.ChangePasswordResponse]
-	recoverPassword *connect.Client[v1.RecoverPasswordRequest, v1.RecoverPasswordResponse]
-	mintSubkey      *connect.Client[v1.MintSubkeyRequest, v1.MintSubkeyResponse]
-	listSubkeys     *connect.Client[v1.ListSubkeysRequest, v1.ListSubkeysResponse]
-	revokeSubkey    *connect.Client[v1.RevokeSubkeyRequest, v1.RevokeSubkeyResponse]
+	setupKeys              *connect.Client[v1.SetupKeysRequest, v1.SetupKeysResponse]
+	getKeys                *connect.Client[v1.GetKeysRequest, v1.GetKeysResponse]
+	changePassword         *connect.Client[v1.ChangePasswordRequest, v1.ChangePasswordResponse]
+	recoverPassword        *connect.Client[v1.RecoverPasswordRequest, v1.RecoverPasswordResponse]
+	reinitializeTenantKeys *connect.Client[v1.ReinitializeTenantKeysRequest, v1.ReinitializeTenantKeysResponse]
+	mintSubkey             *connect.Client[v1.MintSubkeyRequest, v1.MintSubkeyResponse]
+	listSubkeys            *connect.Client[v1.ListSubkeysRequest, v1.ListSubkeysResponse]
+	revokeSubkey           *connect.Client[v1.RevokeSubkeyRequest, v1.RevokeSubkeyResponse]
 }
 
 // SetupKeys calls keymanagement.v1.KeyManagementService.SetupKeys.
@@ -175,6 +190,11 @@ func (c *keyManagementServiceClient) ChangePassword(ctx context.Context, req *co
 // RecoverPassword calls keymanagement.v1.KeyManagementService.RecoverPassword.
 func (c *keyManagementServiceClient) RecoverPassword(ctx context.Context, req *connect.Request[v1.RecoverPasswordRequest]) (*connect.Response[v1.RecoverPasswordResponse], error) {
 	return c.recoverPassword.CallUnary(ctx, req)
+}
+
+// ReinitializeTenantKeys calls keymanagement.v1.KeyManagementService.ReinitializeTenantKeys.
+func (c *keyManagementServiceClient) ReinitializeTenantKeys(ctx context.Context, req *connect.Request[v1.ReinitializeTenantKeysRequest]) (*connect.Response[v1.ReinitializeTenantKeysResponse], error) {
+	return c.reinitializeTenantKeys.CallUnary(ctx, req)
 }
 
 // MintSubkey calls keymanagement.v1.KeyManagementService.MintSubkey.
@@ -201,12 +221,16 @@ type KeyManagementServiceHandler interface {
 	// GetKeys returns the master key material for the calling tenant.
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	GetKeys(context.Context, *connect.Request[v1.GetKeysRequest]) (*connect.Response[v1.GetKeysResponse], error)
-	// ChangePassword replaces the password-wrapped MasterKey, leaving all
-	// other key material untouched.
+	// ChangePassword replaces the password-wrapped master private key,
+	// leaving all other key material untouched.
 	ChangePassword(context.Context, *connect.Request[v1.ChangePasswordRequest]) (*connect.Response[v1.ChangePasswordResponse], error)
-	// RecoverPassword replaces the password-wrapped MasterKey via the
-	// recovery-key path.
+	// RecoverPassword replaces the password-wrapped master private key via
+	// the recovery-key path.
 	RecoverPassword(context.Context, *connect.Request[v1.RecoverPasswordRequest]) (*connect.Response[v1.RecoverPasswordResponse], error)
+	// ReinitializeTenantKeys replaces the entire stored key envelope. Used by
+	// the panic-button rotation flow after a suspected key compromise; every
+	// credential that produced the previous envelope is assumed burned.
+	ReinitializeTenantKeys(context.Context, *connect.Request[v1.ReinitializeTenantKeysRequest]) (*connect.Response[v1.ReinitializeTenantKeysResponse], error)
 	// MintSubkey stores a new subkey for the calling tenant.
 	MintSubkey(context.Context, *connect.Request[v1.MintSubkeyRequest]) (*connect.Response[v1.MintSubkeyResponse], error)
 	// ListSubkeys returns subkeys for the calling tenant.
@@ -246,6 +270,12 @@ func NewKeyManagementServiceHandler(svc KeyManagementServiceHandler, opts ...con
 		connect.WithSchema(keyManagementServiceRecoverPasswordMethodDescriptor),
 		connect.WithHandlerOptions(opts...),
 	)
+	keyManagementServiceReinitializeTenantKeysHandler := connect.NewUnaryHandler(
+		KeyManagementServiceReinitializeTenantKeysProcedure,
+		svc.ReinitializeTenantKeys,
+		connect.WithSchema(keyManagementServiceReinitializeTenantKeysMethodDescriptor),
+		connect.WithHandlerOptions(opts...),
+	)
 	keyManagementServiceMintSubkeyHandler := connect.NewUnaryHandler(
 		KeyManagementServiceMintSubkeyProcedure,
 		svc.MintSubkey,
@@ -274,6 +304,8 @@ func NewKeyManagementServiceHandler(svc KeyManagementServiceHandler, opts ...con
 			keyManagementServiceChangePasswordHandler.ServeHTTP(w, r)
 		case KeyManagementServiceRecoverPasswordProcedure:
 			keyManagementServiceRecoverPasswordHandler.ServeHTTP(w, r)
+		case KeyManagementServiceReinitializeTenantKeysProcedure:
+			keyManagementServiceReinitializeTenantKeysHandler.ServeHTTP(w, r)
 		case KeyManagementServiceMintSubkeyProcedure:
 			keyManagementServiceMintSubkeyHandler.ServeHTTP(w, r)
 		case KeyManagementServiceListSubkeysProcedure:
@@ -303,6 +335,10 @@ func (UnimplementedKeyManagementServiceHandler) ChangePassword(context.Context, 
 
 func (UnimplementedKeyManagementServiceHandler) RecoverPassword(context.Context, *connect.Request[v1.RecoverPasswordRequest]) (*connect.Response[v1.RecoverPasswordResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("keymanagement.v1.KeyManagementService.RecoverPassword is not implemented"))
+}
+
+func (UnimplementedKeyManagementServiceHandler) ReinitializeTenantKeys(context.Context, *connect.Request[v1.ReinitializeTenantKeysRequest]) (*connect.Response[v1.ReinitializeTenantKeysResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("keymanagement.v1.KeyManagementService.ReinitializeTenantKeys is not implemented"))
 }
 
 func (UnimplementedKeyManagementServiceHandler) MintSubkey(context.Context, *connect.Request[v1.MintSubkeyRequest]) (*connect.Response[v1.MintSubkeyResponse], error) {
